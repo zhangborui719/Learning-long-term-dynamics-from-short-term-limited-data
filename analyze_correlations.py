@@ -28,17 +28,27 @@ def acf_fft(series: np.ndarray, max_lag: int) -> np.ndarray:
     return covariance / covariance[0]
 
 
-def integrated_autocorrelation_time(acf: np.ndarray) -> tuple[float, int]:
-    """Initial-positive-sequence estimate of tau_int and its cutoff lag."""
+def geyer_initial_positive_sequence(acf: np.ndarray) -> tuple[float, int]:
+    """Estimate tau_int with Geyer's initial-positive sequence (IPS).
+
+    Geyer groups adjacent autocorrelations into
+    Gamma_k = rho_(2k) + rho_(2k+1), then stops at the first non-positive
+    pair. The returned cutoff is the last included lag (an odd lag).
+    """
     if acf.size <= 1:
         return 1.0, 0
-    cutoff = acf.size - 1
-    for lag in range(1, acf.size):
-        if acf[lag] <= 0.0:
-            cutoff = lag - 1
-            break
-    tau = 1.0 + 2.0 * float(np.sum(acf[1 : cutoff + 1]))
-    return max(tau, 1.0), cutoff
+    pair_count = (acf.size - 1) // 2
+    if pair_count == 0:
+        return 1.0, 0
+    pair_sums = acf[0 : 2 * pair_count : 2] + acf[1 : 2 * pair_count : 2]
+    nonpositive = np.flatnonzero(pair_sums <= 0.0)
+    included = int(nonpositive[0]) if nonpositive.size else pair_count
+    if included == 0:
+        return 1.0, 0
+    tau = -1.0 + 2.0 * float(np.sum(pair_sums[:included]))
+    # Finite-sample noise can produce a non-positive estimate. Keep the
+    # variance inflation factor positive while retaining the IPS estimate.
+    return max(tau, 1.0e-12), 2 * included - 1
 
 
 def ljung_box(acf: np.ndarray, n: int, lag: int) -> tuple[float, float]:
@@ -59,14 +69,14 @@ def analyze(states: np.ndarray, dt: float, burn_time: float, max_lag: int) -> tu
     for component in range(series.shape[1]):
         acf = acf_fft(series[:, component], max_lag)
         acfs[component] = acf
-        tau, cutoff = integrated_autocorrelation_time(acf)
+        tau, cutoff = geyer_initial_positive_sequence(acf)
         row = {
             "component": component,
             "n_samples": series.shape[0],
             "tau_int_steps": tau,
             "tau_int_time": tau * dt,
             "ess": series.shape[0] / tau,
-            "acf_cutoff_lag": cutoff,
+            "geyer_ips_cutoff_lag": cutoff,
         }
         for lag in test_lags:
             q, p = ljung_box(acf, series.shape[0], lag)
@@ -116,7 +126,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, default=Path("results/correlation"))
     parser.add_argument("--dt", type=float, default=0.01)
     parser.add_argument("--burn-time", type=float, default=5.0)
-    parser.add_argument("--max-lag", type=int, default=1000)
+    parser.add_argument("--max-lag", type=int, default=2000)
     return parser.parse_args()
 
 
@@ -135,7 +145,9 @@ def main() -> None:
     summary_path = args.output_dir / "summary.txt"
     with summary_path.open("w", encoding="utf-8") as handle:
         handle.write(f"Burn-in: t < {args.burn_time:g}\n")
+        handle.write("Geyer estimator: initial positive sequence, Gamma_k = rho_(2k) + rho_(2k+1).\n")
         handle.write("Ljung-Box null hypothesis: no autocorrelation through lag 50.\n")
+        handle.write("Ljung-Box confidence level: 95% (alpha = 0.05).\n")
         for label, (rows, _) in results.items():
             ess = np.array([row["ess"] for row in rows])
             tau = np.array([row["tau_int_time"] for row in rows])
@@ -144,7 +156,8 @@ def main() -> None:
             handle.write(f"n_samples per component: {rows[0]['n_samples']}\n")
             handle.write(f"ESS median/min/max: {np.median(ess):.2f} / {ess.min():.2f} / {ess.max():.2f}\n")
             handle.write(f"tau_int time median/min/max: {np.median(tau):.4f} / {tau.min():.4f} / {tau.max():.4f}\n")
-            handle.write(f"Ljung-Box Q(50) p > 0.05: {np.sum(p > 0.05)}/{p.size} components\n")
+            handle.write(f"Ljung-Box Q(50) rejects at 95% confidence: {np.sum(p < 0.05)}/{p.size} components\n")
+            handle.write(f"Ljung-Box Q(50) p-value min/max: {p.min():.3e} / {p.max():.3e}\n")
 
     print(summary_path.read_text(encoding="utf-8"))
 
