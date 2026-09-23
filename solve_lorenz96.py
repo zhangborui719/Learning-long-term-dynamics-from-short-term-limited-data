@@ -109,7 +109,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--forcing", type=float, default=8.0)
     parser.add_argument("--n", type=int, default=40)
-    parser.add_argument("--t-end", type=float, default=20.0)
+    parser.add_argument("--t-end", type=float, default=150.0)
     parser.add_argument("--dt", type=float, default=0.01)
     parser.add_argument("--seed", type=int, default=20260917)
     parser.add_argument("--output-dir", type=Path, default=Path("results"))
