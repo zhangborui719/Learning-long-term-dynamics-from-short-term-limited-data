@@ -1,0 +1,18 @@
+Burn-in: t < 5
+Geyer estimator: initial positive sequence, Gamma_k = rho_(2k) + rho_(2k+1).
+Ljung-Box null hypothesis: no autocorrelation through lag 50.
+Ljung-Box confidence level: 95% (alpha = 0.05).
+
+F=8
+n_samples per component: 14501
+ESS median/min/max: 306.90 / 281.69 / 337.26
+tau_int time median/min/max: 0.4725 / 0.4300 / 0.5148
+Ljung-Box Q(50) rejects at 95% confidence: 40/40 components
+Ljung-Box Q(50) p-value min/max: 0.000e+00 / 0.000e+00
+
+F=64
+n_samples per component: 14501
+ESS median/min/max: 1171.29 / 980.15 / 1298.53
+tau_int time median/min/max: 0.1238 / 0.1117 / 0.1479
+Ljung-Box Q(50) rejects at 95% confidence: 40/40 components
+Ljung-Box Q(50) p-value min/max: 0.000e+00 / 0.000e+00
