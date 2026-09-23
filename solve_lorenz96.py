@@ -123,9 +123,9 @@ def main() -> None:
     x0 = initial_condition(args.n, args.forcing, args.seed)
     times, states = integrate_lorenz96(x0, args.forcing, args.t_end, args.dt)
 
-    figure_path = args.output_dir / "lorenz96_rk4.png"
-    csv_path = args.output_dir / "lorenz96_rk4.csv"
-    initial_path = args.output_dir / "initial_condition.csv"
+    figure_path = args.output_dir / f"lorenz96_rk4_F{args.forcing:g}.png"
+    csv_path = args.output_dir / f"lorenz96_rk4_F{args.forcing:g}.csv"
+    initial_path = args.output_dir / f"initial_condition_F{args.forcing:g}.csv"
     plot_solution(figure_path, times, states, args.forcing)
     save_csv(csv_path, times, states)
     np.savetxt(initial_path, x0, delimiter=",", header="x_j(0)", comments="")
