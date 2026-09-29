@@ -114,3 +114,25 @@ python -m unittest -v
 The tests verify periodic indexing, preservation of the constant equilibrium,
 and the expected fourth-order convergence on a reduced problem with a known
 exact solution.
+
+## Energy correlations for F=64
+
+The energy analysis uses
+
+```text
+E_j(t) = x_j(t)^2 / 2
+```
+
+after the same `t < 5` burn-in. Run:
+
+```bash
+python analyze_energy_correlations.py
+```
+
+This writes `results/energy_correlation/`:
+
+- `energy_F64.csv` and `energy_space_time_F64.png`: energy samples and the space-time energy field.
+- `energy_temporal_acf_F64.png`: temporal ACF, averaged over spatial components with the component range.
+- `energy_spatial_acf_definitions_F64.png`: three periodic spatial ACF definitions. `snapshot_centered` centers each time snapshot over space; `global_centered` uses one global mean and variance; `component_anomaly` removes each component's temporal mean before forming spatial covariance.
+- `energy_spacetime_acf_3d_F64.png`: three-dimensional ACF surface using the global-centered periodic correlation `C(delta t, delta j)`, averaged over all valid time pairs and spatial shifts.
+- CSV files containing the plotted numerical values.
