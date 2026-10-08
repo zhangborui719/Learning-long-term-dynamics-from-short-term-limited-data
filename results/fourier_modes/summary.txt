@@ -1,0 +1,71 @@
+Input: results\lorenz96_rk4_F64.csv
+Forcing: F=64
+Output directory: results\fourier_modes
+Burn-in discarded: t < 5
+Samples per mode after burn-in: 14501
+
+Transform: unitary spatial DFT, xhat_k = N^-1/2 * sum_j x_j exp(-2*pi*i*(j-1)*k/N).
+Independent modes kept: k = 0 .. N/2 (all others follow from conjugate symmetry).
+Mode ACF: rho_k(tau) = E[conj(z_t) z_{t+tau}] / E[|z|^2] with the temporal mean removed.
+Integrated time: Geyer initial-positive sequence applied to Re rho_k(tau).
+Energy: E_k = dof_k * 0.5 * |xhat_k|^2, dof_k = 1 for k = 0 and k = N/2 else 2.
+Share: time-averaged E_k divided by the time-averaged total energy.
+
+Numerical self-checks
+  independent modes ................. 21
+  max |sum_k |xhat_k|^2 - ||x||^2| .. 1.490e-08
+  max |xhat_(N-k) - conj(xhat_k)| ... 2.161e-14
+  max |sum_k E_k - ||x||^2 / 2| ..... 5.457e-12
+  time-averaged ||x||^2 / 2 ......... 6265.96
+
+Mode summary
+  k  dof   <|xhat_k|^2>           <E_k>   share %   tau_int        ESS   LB p(50)
+  0    1        1201.99         600.997    9.5915    0.1627     891.14  0.000e+00
+  1    2         237.55          237.55    3.7911    0.1480     979.70  0.000e+00
+  2    2        238.034         238.034    3.7988    0.1357    1068.69  0.000e+00
+  3    2        246.181         246.181    3.9289    0.1237    1172.00  0.000e+00
+  4    2        287.105         287.105    4.5820    0.1208    1200.42  0.000e+00
+  5    2        330.368         330.368    5.2724    0.1205    1203.06  0.000e+00
+  6    2        342.402         342.402    5.4645    0.1138    1273.73  0.000e+00
+  7    2        357.841         357.841    5.7109    0.1217    1191.34  0.000e+00
+  8    2          380.5           380.5    6.0725    0.1217    1191.42  0.000e+00
+  9    2        356.872         356.872    5.6954    0.1195    1213.82  0.000e+00
+ 10    2        377.727         377.727    6.0282    0.1550     935.75  0.000e+00
+ 11    2        367.216         367.216    5.8605    0.1526     950.41  0.000e+00
+ 12    2        361.548         361.548    5.7700    0.1528     949.32  0.000e+00
+ 13    2        327.958         327.958    5.2340    0.1518     955.30  0.000e+00
+ 14    2        284.951         284.951    4.5476    0.1301    1114.62  0.000e+00
+ 15    2        256.809         256.809    4.0985    0.1119    1295.34  0.000e+00
+ 16    2        234.088         234.088    3.7359    0.0990    1464.89  0.000e+00
+ 17    2        220.976         220.976    3.5266    0.0962    1506.63  0.000e+00
+ 18    2        191.311         191.311    3.0532    0.0940    1543.20  0.000e+00
+ 19    2        176.549         176.549    2.8176    0.0916    1582.55  0.000e+00
+ 20    1        177.958         88.9791    1.4200    0.0919    1577.61  0.000e+00
+
+Ranking by energy share
+   1. k =  0  share = 9.5915 %
+   2. k =  8  share = 6.0725 %
+   3. k = 10  share = 6.0282 %
+   4. k = 11  share = 5.8605 %
+   5. k = 12  share = 5.7700 %
+   6. k =  7  share = 5.7109 %
+   7. k =  9  share = 5.6954 %
+   8. k =  6  share = 5.4645 %
+   9. k =  5  share = 5.2724 %
+  10. k = 13  share = 5.2340 %
+  11. k =  4  share = 4.5820 %
+  12. k = 14  share = 4.5476 %
+  13. k = 15  share = 4.0985 %
+  14. k =  3  share = 3.9289 %
+  15. k =  2  share = 3.7988 %
+  16. k =  1  share = 3.7911 %
+  17. k = 16  share = 3.7359 %
+  18. k = 17  share = 3.5266 %
+  19. k = 18  share = 3.0532 %
+  20. k = 19  share = 2.8176 %
+  21. k = 20  share = 1.4200 %
+
+tau_int (time) over modes: median 0.1217, min 0.0916, max 0.1627
+ESS over modes: median 1191.42, min 891.14, max 1582.55
+cumulative share of k = 0..5 ........ 30.96 %
+Ljung-Box Q(50) rejects at 95% confidence for 21/21 modes

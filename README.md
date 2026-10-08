@@ -136,3 +136,77 @@ This writes `results/energy_correlation/`:
 - `energy_spatial_acf_definitions_F64.png`: three periodic spatial ACF definitions. `snapshot_centered` centers each time snapshot over space; `global_centered` uses one global mean and variance; `component_anomaly` removes each component's temporal mean before forming spatial covariance.
 - `energy_spacetime_acf_3d_F64.png`: three-dimensional ACF surface using the global-centered periodic correlation `C(delta t, delta j)`, averaged over all valid time pairs and spatial shifts.
 - CSV files containing the plotted numerical values.
+
+## Fourier representation, mode ACF and mode energy (F=64)
+
+The spatial DFT of the state is
+
+```text
+xhat_k(t) = N^(-1/2) * sum_j x_j(t) exp(-2 pi i (j - 1) k / N),   k = 0 .. N-1
+```
+
+with `N = 40`. Because `x_j` is real, the coefficients satisfy the conjugate
+symmetry `xhat_(N-k) = conj(xhat_k)`, so only `k = 0 .. N/2` are independent:
+mode `0` and the Nyquist mode `k = N/2 = 20` are real, and the `k = 1 .. 19` are
+genuine complex series. Every mode therefore contributes a complex-valued time
+series `{xhat_k(t)}`.
+
+Run:
+
+```bash
+python analyze_fourier_modes.py
+```
+
+The temporal autocorrelation of a mode uses the Hermitian convention
+
+```text
+rho_k(tau) = E[conj(xhat_k(t)) xhat_k(t + tau)] / E[|xhat_k(t)|^2]
+```
+
+with the temporal mean removed, so `rho_k` is complex with
+`rho_k(-tau) = conj(rho_k(tau))` and `rho_k(0) = 1`. `Re rho_k` is itself a real
+autocorrelation sequence (it is the variance-weighted average of the ACFs of
+`Re xhat_k` and `Im xhat_k`), so Geyer's initial-positive sequence is applied to
+it to obtain the integrated time.
+
+Energy is assigned per mode. Since the transform above is unitary, Parseval reads
+`sum_k |xhat_k|^2 = ||x||^2`, and with `dof_k = 1` for `k = 0, N/2` and
+`dof_k = 2` otherwise,
+
+```text
+E_k(t) = dof_k * |xhat_k(t)|^2 / 2 ,     sum_k E_k(t) = ||x(t)||^2 / 2
+```
+
+The reported share is `mean_t E_k / mean_t ||x||^2 / 2`, which sums to 100% by
+construction. Run with `--self-check` to compare the FFT autocorrelation against
+a direct `O(n * lag)` loop.
+
+This writes `results/fourier_modes/`:
+
+- `fourier_energy_spectrum_F64.png`: energy share per mode, log-scale mode energy and the cumulative share.
+- `fourier_wavenumber_time_F64.png`: mode energy density `10 log10(E_k / Ebar)` as a function of time and wavenumber.
+- `fourier_acf_F64.png`: mode ACF magnitude (log scale), its heat map, and the integrated decorrelation time per mode.
+- `fourier_acf_real_imag_F64.png`: real and imaginary parts of the ACF for `k = 0, 1, 5, 10, 20`.
+- `mode_amplitudes_F64.csv`, `mode_real_imag_F64.csv`, `mode_energy_F64.csv`: the mode series and their energies.
+- `fourier_acf_curves_F64.csv`, `fourier_mode_summary_F64.csv`, `summary.txt`: ACF curves and the per-mode table.
+
+For the committed run (`n_samples = 14501` per mode, `t < 5` discarded):
+
+| Quantity | Value |
+|---|---|
+| Parseval check `max abs(sum_k |xhat_k|^2 - ||x||^2)` | 1.5e-08 |
+| Conjugate-symmetry check `max abs(xhat_(N-k) - conj(xhat_k))` | 2.2e-14 |
+| Energy-partition check `max abs(sum_k E_k - ||x||^2/2)` | 5.5e-12 |
+| Time-averaged total energy `||x||^2 / 2` | 6265.96 |
+| Largest mode share | `k = 0`, 9.59% |
+| Energy-containing band | `k = 4 .. 13`, 55.7% |
+| Smallest mode share | `k = 20`, 1.42% |
+| Median / min / max `tau_int` | 0.1217 / 0.0916 / 0.1627 |
+
+The spectrum is red: the largest share belongs to the spatial mean (`k = 0`)
+and the share decreases towards the Nyquist mode. Per degree of freedom the same
+ordering holds, so the large scales carry more energy than the small ones. The
+integrated decorrelation time follows the opposite ordering overall, from
+`0.1627` at `k = 0` down to `0.0916` at `k = 19`, with a secondary maximum near
+`k = 10 .. 13` that coincides with the energy-containing band.
+
