@@ -210,3 +210,132 @@ integrated decorrelation time follows the opposite ordering overall, from
 `0.1627` at `k = 0` down to `0.0916` at `k = 19`, with a secondary maximum near
 `k = 10 .. 13` that coincides with the energy-containing band.
 
+## Neural flow map, method 1: direct next-state regression (F=64)
+
+A *flow map* is the one-step propagator of the ODE. Resampling the `dt = 0.01`
+record on the requested `dt = 0.1` grid and pairing consecutive snapshots gives
+supervised pairs `(x(t), x(t + 0.1))`, and the task is to learn
+`Phi_dt` with a neural network.
+
+Four regression strategies share one pipeline (`flowmap_data.TargetCodec`), so
+that the data, the network and the metrics are identical across them:
+
+| Mode | Network regresses |
+|---|---|
+| `direct` | `z(t + dt)` — implemented here |
+| `delta` | `z(t + dt) - z(t)` |
+| `residual_linear` | residual against a ridge-fit affine map `A z + b` |
+| `residual_linearized` | residual against the exact solution of `x' = -x + F`, i.e. `F + (x - F) exp(-dt)` |
+
+### Protocol
+
+```bash
+python train_flowmap.py                 # method 1, the committed run
+python train_flowmap.py --self-check    # fast consistency checks
+python scan_dt_flowmap.py               # sampling-interval sweep
+```
+
+- Burn-in: `t < 5` is discarded, because the solver starts near the unstable
+  equilibrium `x_j = F` and that spin-up is not on the attractor.
+- Split: chronological, **first 2/3 train / last 1/3 test**. The transition that
+  straddles the boundary is dropped, so no training target lies inside the test
+  segment. 966 training pairs, 483 test pairs.
+- Standardisation: `z = (x - mu) / sigma` with `mu`, `sigma` taken from the
+  training split only. Necessary: the state amplitude is `O(10^2)`.
+- Network: `40 -> [Linear + tanh] x 2 (80 units) -> Linear -> 40`,
+  **13 000 trainable parameters**.
+- Optimiser: AdamW, `lr = 3e-3` cosine-annealed to `3e-6`, batch 512,
+  1500 epochs, gradient clipping at norm 10.
+- Augmentation: Lorenz-96 is invariant under cyclic shifts of the index `j`, so
+  `Phi(roll(x, m)) = roll(Phi(x), m)`. Expanding the training pairs over all 40
+  offsets gives 38 640 pairs at zero measurement cost. This is a symmetry of the
+  governing equations, not leakage.
+
+### Result (committed run)
+
+| Metric | Value |
+|---|---|
+| One-step NRMSE, train | 0.7967 |
+| One-step NRMSE, test | **0.8035** |
+| One-step NRMSE, persistence `Phi(x) = x` | 1.2508 |
+| One-step NRMSE, affine ridge map | 0.9653 |
+| Skill relative to persistence | 35.8 % |
+| Skill relative to affine ridge | 16.8 % |
+| Increment NRMSE | 0.6424 |
+| `corr(predicted increment, true increment)` | **0.7664** |
+| Time to 30 % error (map / persistence / affine) | 0.10 / 0.10 / 0.10 |
+| Free-running NRMSE over the test segment | 1.1222 |
+| Rollout rms / truth rms | 0.6752 |
+| Spectrum correlation (log `E_k`, `k >= 1`) | 0.4251 |
+| Largest Lyapunov exponent | 11.89 per time unit |
+| Lyapunov time | **0.084 time units** |
+
+Train and test NRMSE agree to four decimals (0.7967 vs 0.8035), so the residual
+error is **not** overfitting: the network is at the capacity limit of what this
+representation can fit.
+
+![One-step accuracy](results/flowmap/flowmap_one_step_F64.png)
+![Error growth](results/flowmap/flowmap_error_growth_F64.png)
+![Free-running rollout](results/flowmap/flowmap_rollout_F64.png)
+
+### Why the one-step error is as large as it is
+
+Three facts, each measured rather than assumed:
+
+1. **The sampling interval is coarser than a Lyapunov time.** `lambda_max =
+   11.89` gives `tau_Lyap = 0.084`, so `dt = 0.1` spans `1.19 tau_Lyap`. The true
+   one-step map expands an infinitesimal separation by `exp(0.1 * 11.89) ~ 3.3`.
+   Two states that look close on the attractor are already far apart one step
+   later, which is what makes the map hard to interpolate.
+2. **The attractor is almost full-dimensional.** PCA on the resampled record
+   gives a participation ratio of **37.3 out of 40**; the first 20 principal
+   components explain only 64 % of the variance. 38 640 training points in a
+   40-dimensional, nearly isotropic cloud is extremely sparse — the nearest
+   neighbour of a test state is farther away than the attractor diameter.
+3. **Only chaos is not the bottleneck.** A perfect model started `1e-8` away
+   from the truth still predicts to 30 % for **1.69 time units**, because
+   `ln(0.3 * rms / 1e-8) / lambda_max = 1.69`. The learned map has an *effective*
+   initial error of `0.804 * 17.65 = 14.18`, which is already larger than the
+   30 % threshold itself (`0.3 * 17.65 = 5.30`). Hence a useful horizon of zero.
+   The gap between 1.69 and 0 is entirely approximation error, not chaos.
+
+`scan_dt_flowmap.py` isolates the first effect at fixed compute (80 000 gradient
+steps per configuration):
+
+![Sampling-interval sweep](results/flowmap/flowmap_dt_scan_F64.png)
+
+| `dt` | `dt / tau_Lyap` | Training pairs | Next-state NRMSE | Increment NRMSE | Increment corr. |
+|---:|---:|---:|---:|---:|---:|
+| 0.01 | 0.12 | 386 640 | **0.0538** | 0.2507 | 0.9681 |
+| 0.02 | 0.24 | 193 320 | 0.1219 | 0.2907 | 0.9568 |
+| 0.05 | 0.60 | 77 320 | 0.4319 | 0.4786 | 0.8781 |
+| 0.10 | 1.19 | 38 640 | 0.8060 | 0.6444 | 0.7647 |
+| 0.20 | 2.39 | 19 320 | 0.9919 | 0.7304 | 0.6849 |
+
+The same network that reaches 80.6 % error at `dt = 0.1` reaches **5.4 %** at
+`dt = 0.01`. The architecture is not the limitation; the requested sampling
+interval is. Any claim about a neural flow map for this system has to state the
+interval it is trained on.
+
+### Two behaviours worth knowing
+
+- **Amplitude contraction.** A regression network trained on one-step targets
+  shrinks towards the conditional mean when uncertain, and iterating that
+  shrinkage produces a *smaller* attractor rather than a divergence. The
+  free-running rollout keeps oscillating, with rms equal to 0.68 of the truth and
+  a mean 1.18 times larger — see the bottom panel of the rollout figure.
+- **Spectral distortion.** The reproduced spectrum is 3-10x low and peaks at
+  `k = 8` instead of `k = 11`, because the contraction suppresses the energetic
+  band more than the large scales.
+
+### Files
+
+- `flowmap_data.py`: resampling, chronological split, the four target codecs.
+- `flowmap_model.py`: the MLP and the training loop.
+- `train_flowmap.py`: end-to-end run, metrics, figures, `--self-check`.
+- `scan_dt_flowmap.py`: sampling-interval sweep at fixed compute.
+- `test_flowmap.py`: 16 unit tests, including a finite-difference check of the
+  analytic gradient and a check that cyclic shifting commutes with the true flow.
+- `results/flowmap/`: figures, `metrics.json`, `summary.txt`, per-epoch history,
+  rollout and sweep CSVs, and the trained weights (`flowmap_model_F64.pt`).
+
