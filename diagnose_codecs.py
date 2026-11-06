@@ -898,6 +898,11 @@ def figure_lyapunov(
                          (bar.get_x() + bar.get_width() / 2, value),
                          textcoords="offset points", xytext=(0, 6 if value >= 0 else -14),
                          ha="center", fontsize=10)
+        # On a symlog axis a bar of height 0.01 is invisible; mark the top so
+        # "essentially zero" reads as a datum rather than as a missing bar.
+        if abs(value) < 1.0:
+            axes[1].plot([bar.get_x() + bar.get_width() / 2], [value], marker="o", ms=7,
+                         color=bar.get_facecolor(), zorder=5, clip_on=False)
     axes[1].axhline(0.0, color="0.25", lw=1.1)
     # The true exponent is 40x the learned ones, so a linear axis would hide the
     # two numbers that matter.  symlog keeps the sign visible.
