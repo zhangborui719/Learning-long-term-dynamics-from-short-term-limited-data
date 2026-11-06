@@ -1,0 +1,49 @@
+Flow-map learning on Lorenz-96, F = 64.0
+==============================================================
+method                                       delta: network output is the standardised increment dz
+architecture                                 MLP 40 -> [80 tanh] x 2 -> 40, 13000 trainable parameters
+state dimension                              40
+resampling stride                            10
+sampling interval dt                         0.1
+standardization                              global (mean=4.9235, sd=17.0340)
+resampled snapshots                          1451
+split index                                  967
+train transitions                            966
+test transitions                             483
+train time span                              5.00 .. 101.50
+test time span                               101.70 .. 149.90
+train mean of x                              4.9235
+test mean of x                               4.8972
+train rms of x                               17.7313
+test rms of x                                17.6402
+shift augmentation                           40x cyclic -> 38640 pairs
+                                             
+one-step NRMSE (train)                       0.84019
+one-step NRMSE (test)                        0.84732
+one-step NRMSE persistence                   1.25082
+one-step NRMSE affine ridge                  0.96534
+skill vs persistence                         32.26 %
+skill vs affine                              12.23 %
+increment NRMSE (test)                       0.67741
+increment correlation                        0.73563
+                                             
+NRMSE at horizon 1 step                      0.84390
+NRMSE at horizon 20 steps                    1.08663
+valid time (map, 30% err)                    0.100 time units
+valid time (persistence)                     0.100 time units
+valid time (affine ridge)                    0.100 time units
+                                             
+free-running NRMSE                           1.09311
+rollout mean / truth mean                    1.2638
+rollout rms / truth rms                      0.6147
+spectrum correlation (log E, k>=1)           0.4627
+spectrum peak mode                           8 (truth 11)
+                                             
+largest Lyapunov exponent                    11.8887 per time unit
+Lyapunov time                                0.084 time units
+perfect-model predictability (1e-8 -> 30%)   1.69 time units
+effective initial error of the map           14.952 (state rms 17.65)
+horizon implied by that error                -0.087 time units
+                                             
+wall clock                                   127.7 s
+trainable parameters                         13000

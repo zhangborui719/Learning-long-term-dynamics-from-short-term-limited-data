@@ -610,11 +610,15 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     split = build_split(
         Path(args.data), stride=args.stride, train_fraction=args.train_fraction,
-        burn_in=args.burn_in,
+        burn_in=args.burn_in, standardization=args.standardization,
     )
     codec = build_codec(args.mode, split)
     data = encode_dataset(split, codec)
     LOGGER.info("mode: %s", codec.description)
+    LOGGER.info(
+        "standardization: %s (mean=%.4f, sd=%.4f)",
+        split.standardization, float(split.mean), float(split.scale),
+    )
 
     model = FlowMapMLP(
         n_dim=split.n_dim,
@@ -652,6 +656,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "mode": args.mode,
         "seed": args.seed,
         "dt": split.dt,
+        "standardization": split.standardization,
+        "standardization_mean": float(split.mean),
+        "standardization_sd": float(split.scale),
+        "learning_rate": args.lr,
+        "epochs": args.epochs,
         "shift_augment": args.shift_augment,
         "burn_in": args.burn_in,
         "n_train_augmented": int(train_x.shape[0]),
@@ -896,7 +905,8 @@ def self_check(args: argparse.Namespace) -> int:
         Process exit code (0 on success).
     """
     split = build_split(Path(args.data), stride=args.stride,
-                        train_fraction=args.train_fraction, burn_in=args.burn_in)
+                        train_fraction=args.train_fraction, burn_in=args.burn_in,
+                        standardization=args.standardization)
     codec = build_codec(args.mode, split)
     model = FlowMapMLP(split.n_dim, args.hidden_width, args.hidden_layers, args.activation)
 
@@ -946,6 +956,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         help="regression strategy")
     parser.add_argument("--stride", type=int, default=10,
                         help="resampling stride applied to the raw dt=0.01 record")
+    parser.add_argument("--standardization", default="global",
+                        choices=["global", "per_component"],
+                        help="how mu/sigma are estimated on the training split: "
+                             "'global' pools all components into one scalar (uses "
+                             "the cyclic symmetry), 'per_component' estimates each "
+                             "component separately")
     parser.add_argument("--train-fraction", type=float, default=2.0 / 3.0)
     parser.add_argument("--burn-in", type=float, default=5.0,
                         help="physical time discarded from the start of the record "

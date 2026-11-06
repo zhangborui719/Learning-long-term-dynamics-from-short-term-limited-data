@@ -1,0 +1,32 @@
+INFO    loaded 15001 snapshots x 40 components from lorenz96_rk4_F64.csv
+INFO    split: 966 train pairs, 483 test pairs, dt=0.1, boundary at t=101.70
+INFO    mode: direct: network output is the standardised next state z(t+dt)
+INFO    standardization: global (mean=4.9235, sd=17.0340)
+INFO    model: MLP 40 -> [80 tanh] x 2 -> 40, 13000 trainable parameters
+INFO    shift augmentation: 966 -> 38640 training pairs (cyclic symmetry)
+INFO    epoch     0  train 9.686612e-01  test 9.600369e-01  lr 3.00e-03  |grad| 5.190e-02
+INFO    epoch   150  train 7.425435e-01  test 7.371193e-01  lr 2.93e-03  |grad| 2.133e-01
+INFO    epoch   300  train 7.241675e-01  test 7.191739e-01  lr 2.71e-03  |grad| 2.417e-01
+INFO    epoch   450  train 7.141505e-01  test 7.088102e-01  lr 2.38e-03  |grad| 2.713e-01
+INFO    epoch   600  train 7.067734e-01  test 7.017136e-01  lr 1.96e-03  |grad| 2.844e-01
+INFO    epoch   750  train 7.029904e-01  test 6.997117e-01  lr 1.50e-03  |grad| 2.995e-01
+INFO    epoch   900  train 6.963156e-01  test 6.929306e-01  lr 1.04e-03  |grad| 3.068e-01
+INFO    epoch  1050  train 6.923572e-01  test 6.888860e-01  lr 6.18e-04  |grad| 3.064e-01
+INFO    epoch  1200  train 6.900002e-01  test 6.867223e-01  lr 2.87e-04  |grad| 3.073e-01
+INFO    epoch  1350  train 6.888598e-01  test 6.857125e-01  lr 7.54e-05  |grad| 3.021e-01
+INFO    epoch  1499  train 6.886832e-01  test 6.851422e-01  lr 3.00e-06  |grad| 2.980e-01
+
+Key results
+------------------------------------------------------------------
+  one-step NRMSE (test)      0.79903
+  persistence NRMSE          1.25082
+  affine ridge NRMSE         0.96534
+  skill vs persistence       36.12 %
+  increment NRMSE            0.63880
+  increment correlation      0.76939
+  valid time                 0.10 time units
+  free-running NRMSE         1.12358
+  rollout rms / truth rms    0.6680
+  Lyapunov time              0.084
+  perfect-model predictability 1.69 time units
+------------------------------------------------------------------

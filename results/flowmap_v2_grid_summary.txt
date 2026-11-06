@@ -1,0 +1,29 @@
+Flow-map experiment grid: F=64, dt=0.1, 1500 epochs, shift-augment 40x, seed 0
+================================================================================================
+v2 = global standardisation (mean/sd pooled over all 40 components, training split only)
+
+run                              1-step   incr r  rms rat   spec r  rollout  mean r
+------------------------------------------------------------------------------------
+v1 direct  lr3e-3  per-comp      0.8035   0.7664   0.6752   0.4251   1.1222   1.179
+v2 direct  lr1e-2  global        0.8024   0.7671   0.6654   0.5494   1.1258   1.197
+v2 direct  lr3e-3  global        0.7990   0.7694   0.6680   0.6784   1.1236   1.251
+v2 delta   lr1e-2  global        0.8473   0.7356   0.6147   0.4627   1.0931   1.264
+v2 delta   lr3e-3  global        0.8519   0.7322   0.5866   0.6473   1.0714   1.325
+
+Findings (2026-11-06):
+1. Global standardisation (pooling all 40 components) is the main win: the direct
+   map's log-spectrum correlation jumps 0.425 -> 0.678 (+60%) at lr=3e-3, and the
+   one-step NRMSE also improves slightly (0.8035 -> 0.7990).
+2. Larger lr (1e-2 vs 3e-3) does NOT help: spectrum correlation drops for both
+   modes (direct 0.678->0.549, delta 0.647->0.463). Keep lr=3e-3.
+3. The delta codec does NOT improve spectrum statistics -- it is worse on every
+   spectrum metric at both learning rates (its only edge: free-running NRMSE
+   1.07-1.09 vs 1.12-1.13, which reflects stronger contraction towards the mean,
+   rms ratio 0.59-0.61 vs 0.67, itself a defect rather than a virtue).
+   Why: with global standardisation the direct target z(t+dt) is already O(1) with
+   the same spectral content; the increment removes the shared identity component
+   but forces the network to synthesise the full increment from scratch, and the
+   resulting decoded state accumulates a larger mean drift (mean ratio 1.26-1.33
+   vs 1.18-1.25). The 'learn fluctuations not offsets' argument only pays off when
+   the offset dwarfs the fluctuations *in the loss*, which global standardisation
+   already removes by construction.

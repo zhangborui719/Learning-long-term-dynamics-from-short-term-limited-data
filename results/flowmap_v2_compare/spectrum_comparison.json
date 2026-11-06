@@ -1,0 +1,43 @@
+{
+  "n_rollout_steps": 483,
+  "n_dim": 40,
+  "slope_mode_range": [
+    1,
+    20
+  ],
+  "reference_peak_mode": 11.0,
+  "reference_spectral_slope": -0.11010099348145282,
+  "reference_total_energy_k_ge_1": 5633.692182437274,
+  "direct": {
+    "log_spectrum_correlation": 0.5493643115097756,
+    "mean_abs_log10_ratio": 0.7453760013847668,
+    "total_energy_ratio": 0.3655909604986705,
+    "peak_mode": 8.0,
+    "spectral_slope": 0.2744175207518627
+  },
+  "delta": {
+    "log_spectrum_correlation": 0.46271113374962214,
+    "mean_abs_log10_ratio": 1.1009341570914566,
+    "total_energy_ratio": 0.2816087630561287,
+    "peak_mode": 8.0,
+    "spectral_slope": 0.2583954488914427
+  },
+  "direct_run": {
+    "test_nrmse": 0.8024281838603018,
+    "delta_correlation": 0.7671352290021152,
+    "rms_ratio": 0.6653792389221906,
+    "spectrum_correlation": 0.5493643117906701,
+    "rollout_nrmse": 1.125830806469876,
+    "learning_rate": 0.01,
+    "standardization": "global"
+  },
+  "delta_run": {
+    "test_nrmse": 0.8473151054290218,
+    "delta_correlation": 0.7356252907761892,
+    "rms_ratio": 0.6146693451531842,
+    "spectrum_correlation": 0.4627111419760618,
+    "rollout_nrmse": 1.0931052415459126,
+    "learning_rate": 0.01,
+    "standardization": "global"
+  }
+}

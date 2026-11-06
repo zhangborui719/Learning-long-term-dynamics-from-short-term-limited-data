@@ -62,8 +62,10 @@ class TargetCodec:
     predictor.
 
     Attributes:
-        mean: per-component training mean ``mu``, shape ``(d,)``.
-        scale: per-component training standard deviation ``sigma``, shape ``(d,)``.
+        mean: training mean ``mu`` — a scalar (stored as a 0-d array) when all
+            components are pooled (``standardization="global"``), or a
+            per-component vector of shape ``(d,)`` otherwise.
+        scale: training standard deviation ``sigma``, same convention as ``mean``.
     """
 
     def __init__(self, mean: np.ndarray, scale: np.ndarray, dt: float) -> None:
@@ -198,8 +200,10 @@ class FlowMapSplit:
         test_target: same, for the held-out tail.
         train_time: physical time of each ``train_input`` row.
         test_time: physical time of each ``test_input`` row.
-        mean: per-component training mean, shape ``(d,)``.
-        scale: per-component training standard deviation, shape ``(d,)``.
+        mean: training mean — 0-d array (global pooling) or ``(d,)`` vector.
+        scale: training standard deviation — same convention as ``mean``.
+        standardization: which pooling was used, ``"global"`` or
+            ``"per_component"``.
         stride: resampling stride applied to the raw solver output.
         dt: sampling interval of the pairs, ``stride * raw_dt``.
         n_points: number of resampled snapshots before pairing.
@@ -214,6 +218,7 @@ class FlowMapSplit:
     test_time: np.ndarray
     mean: np.ndarray
     scale: np.ndarray
+    standardization: str
     stride: int
     dt: float
     n_points: int
@@ -230,6 +235,8 @@ class FlowMapSplit:
             ("state dimension", f"{self.n_dim}"),
             ("resampling stride", f"{self.stride}"),
             ("sampling interval dt", f"{self.dt:.6g}"),
+            ("standardization", f"{self.standardization} "
+                                f"(mean={float(self.mean):.4f}, sd={float(self.scale):.4f})"),
             ("resampled snapshots", f"{self.n_points}"),
             ("split index", f"{self.split_index}"),
             ("train transitions", f"{self.train_input.shape[0]}"),
@@ -279,6 +286,7 @@ def build_split(
     stride: int = 10,
     train_fraction: float = 2.0 / 3.0,
     burn_in: float = 0.0,
+    standardization: str = "global",
 ) -> FlowMapSplit:
     """Resample a trajectory, split it chronologically and build step pairs.
 
@@ -291,18 +299,29 @@ def build_split(
         stride: keep every ``stride``-th raw snapshot.
         train_fraction: fraction of the resampled record used for training.
         burn_in: physical time to discard from the start of the record.
+        standardization: how ``mu`` and ``sigma`` are estimated on the training
+            split.  ``"global"`` pools all components into one scalar mean and
+            standard deviation (the right choice for systems with a permutation
+            symmetry such as Lorenz-96: every component shares the same marginal
+            law, so pooling turns ~1e3 samples into ~4e4); ``"per_component"``
+            estimates each component separately.
 
     Returns:
         A populated :class:`FlowMapSplit`.
 
     Raises:
         ValueError: on non-positive ``stride``, a ``train_fraction`` outside
-            ``(0, 1)``, or a split too short to contain any pair.
+            ``(0, 1)``, a split too short to contain any pair, or an unknown
+            ``standardization``.
     """
     if stride <= 0:
         raise ValueError(f"stride must be positive, got {stride}")
     if not 0.0 < train_fraction < 1.0:
         raise ValueError(f"train_fraction must lie in (0, 1), got {train_fraction}")
+    if standardization not in ("global", "per_component"):
+        raise ValueError(
+            f"standardization must be 'global' or 'per_component', got {standardization!r}"
+        )
 
     time, states = load_snapshots(path)
     if burn_in > 0.0:
@@ -334,11 +353,21 @@ def build_split(
     test_input = states[test_rows]
     test_target = states[test_rows + 1]
 
-    mean = train_input.mean(axis=0)
-    scale = train_input.std(axis=0)
-    # A degenerate component (constant in the training split) would blow up the
-    # standardisation; fall back to unit scale so the transform stays invertible.
-    scale = np.where(scale > 1e-12, scale, 1.0)
+    if standardization == "global":
+        # Pool every component into one scalar: by the cyclic symmetry all
+        # components share the same marginal distribution, so the pooled
+        # estimates are both less noisy and consistent with the shift
+        # augmentation used during training.
+        mean = np.asarray(float(train_input.mean()))
+        scale = np.asarray(float(train_input.std()))
+        if float(scale) <= 1e-12:
+            scale = np.asarray(1.0)
+    else:
+        mean = train_input.mean(axis=0)
+        scale = train_input.std(axis=0)
+        # A degenerate component (constant in the training split) would blow up
+        # the standardisation; fall back to unit scale so it stays invertible.
+        scale = np.where(scale > 1e-12, scale, 1.0)
 
     split = FlowMapSplit(
         train_input=train_input,
@@ -349,6 +378,7 @@ def build_split(
         test_time=time[test_rows],
         mean=mean,
         scale=scale,
+        standardization=standardization,
         stride=stride,
         dt=raw_dt * stride,
         n_points=n_points,
