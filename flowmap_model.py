@@ -15,8 +15,9 @@ not have.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Callable, Literal
 
 import numpy as np
 import torch
@@ -25,6 +26,88 @@ from torch import nn
 LOGGER = logging.getLogger("flowmap.model")
 
 ActivationName = Literal["tanh", "silu", "gelu", "relu"]
+ScheduleName = Literal["cosine", "linear", "constant"]
+
+
+# ---------------------------------------------------------------------------
+# learning-rate annealing
+# ---------------------------------------------------------------------------
+def lr_multiplier(
+    epoch: int,
+    epochs: int,
+    warmup_epochs: int = 0,
+    final_fraction: float = 1e-3,
+    shape: ScheduleName = "cosine",
+) -> float:
+    """Fraction of the peak learning rate to apply at ``epoch``.
+
+    The schedule is ``warmup (optional) -> decay -> final_fraction``.  Decay to a
+    small but non-zero value (``final_fraction = 1e-3``) rather than to exactly
+    zero keeps the last epochs from freezing in a high-curvature region, which
+    matters here because the loss surface of a chaotic flow map has very large
+    curvature in the advection-dominated directions.
+
+    Args:
+        epoch: zero-based epoch index.
+        epochs: total number of epochs.
+        warmup_epochs: length of the linear warmup from ``~0`` to the peak.
+        final_fraction: multiplier reached at the last epoch.
+        shape: ``"cosine"``, ``"linear"`` or ``"constant"`` (ablation control).
+
+    Returns:
+        A multiplier in ``[0, 1]`` that is never below ``final_fraction``.
+    """
+    if epochs <= 0:
+        raise ValueError(f"epochs must be positive, got {epochs}")
+    if not 0.0 <= final_fraction < 1.0:
+        raise ValueError(f"final_fraction must lie in [0, 1), got {final_fraction}")
+    warmup_epochs = int(max(0, min(warmup_epochs, epochs - 1)))
+
+    if epoch < warmup_epochs:
+        return (epoch + 1) / warmup_epochs
+
+    span = max(1, epochs - warmup_epochs)
+    progress = min(1.0, (epoch - warmup_epochs) / span)
+    if shape == "cosine":
+        base = 0.5 * (1.0 + math.cos(math.pi * progress))
+    elif shape == "linear":
+        base = 1.0 - progress
+    elif shape == "constant":
+        base = 1.0
+    else:
+        raise ValueError(f"unknown schedule shape {shape!r}")
+    return final_fraction + (1.0 - final_fraction) * base
+
+
+def build_scheduler(
+    optimiser: torch.optim.Optimizer,
+    epochs: int,
+    peak_lr: float,
+    schedule: ScheduleName = "cosine",
+    final_fraction: float = 1e-3,
+    warmup_fraction: float = 0.0,
+) -> torch.optim.lr_scheduler.LambdaLR:
+    """Attach an annealing schedule to ``optimiser``.
+
+    Args:
+        optimiser: the optimiser to anneal.
+        epochs: total number of epochs (the schedule horizon).
+        peak_lr: starting learning rate; only used for validation here, the
+            multiplier is applied to whatever the optimiser was constructed with.
+        schedule: decay shape, see :func:`lr_multiplier`.
+        final_fraction: terminal multiplier.
+        warmup_fraction: warmup length as a fraction of ``epochs``.
+
+    Returns:
+        The scheduler; call ``.step()`` once per epoch.
+    """
+    if peak_lr <= 0:
+        raise ValueError(f"peak_lr must be positive, got {peak_lr}")
+    warmup_epochs = int(round(warmup_fraction * epochs))
+    return torch.optim.lr_scheduler.LambdaLR(
+        optimiser,
+        lambda epoch: lr_multiplier(epoch, epochs, warmup_epochs, final_fraction, schedule),
+    )
 
 
 def _activation(name: ActivationName) -> nn.Module:
@@ -115,6 +198,9 @@ class TrainingHistory:
             diagnostics only - it is never used to select the model.
         learning_rate: learning rate applied during the epoch.
         grad_norm: global gradient L2 norm *before* the optimiser step.
+        extra: additional per-epoch series produced by an evaluation hook (e.g.
+            the one-step NRMSE in *state* space, which is the only metric that is
+            comparable between target codecs).
     """
 
     epoch: list[int] = field(default_factory=list)
@@ -122,16 +208,20 @@ class TrainingHistory:
     test_loss: list[float] = field(default_factory=list)
     learning_rate: list[float] = field(default_factory=list)
     grad_norm: list[float] = field(default_factory=list)
+    extra: dict[str, list[float]] = field(default_factory=dict)
 
     def as_arrays(self) -> dict[str, np.ndarray]:
-        """Return the record as plain numpy arrays."""
-        return {
+        """Return the record as plain numpy arrays, base series first."""
+        table = {
             "epoch": np.asarray(self.epoch),
             "train_loss": np.asarray(self.train_loss),
             "test_loss": np.asarray(self.test_loss),
             "learning_rate": np.asarray(self.learning_rate),
             "grad_norm": np.asarray(self.grad_norm),
         }
+        for name, values in self.extra.items():
+            table[name] = np.asarray(values)
+        return table
 
 
 def train_flow_map(
@@ -146,15 +236,18 @@ def train_flow_map(
     weight_decay: float = 0.0,
     seed: int = 0,
     log_every: int = 200,
+    schedule: ScheduleName = "cosine",
+    final_fraction: float = 1e-3,
+    warmup_fraction: float = 0.0,
+    eval_hook: Callable[[FlowMapMLP], dict[str, float]] | None = None,
 ) -> TrainingHistory:
-    """Fit ``model`` by mini-batch Adam with a cosine learning-rate schedule.
+    """Fit ``model`` by mini-batch AdamW with an annealed learning rate.
 
-    The data are *deterministic*: a given state has exactly one successor, so
-    there is no label noise to overfit.  What can go wrong is extrapolation
-    outside the visited region of state space, which early stopping on a random
-    hold-out would not detect either.  We therefore use the full training split
-    for every epoch and anneal the learning rate to zero, which removes the need
-    to tune a stopping epoch.
+    The schedule is ``optional warmup -> decay -> final_fraction * lr`` (see
+    :func:`build_scheduler`).  Annealing to a small residual value rather than
+    stopping at a fixed epoch removes the need to tune a stopping rule: the data
+    are deterministic, so there is no label noise to overfit, and the only risk
+    is fitting the attractor's *visit distribution* rather than the map.
 
     Args:
         model: the network to train (modified in place).
@@ -164,10 +257,17 @@ def train_flow_map(
         test_y: encoded held-out targets, shape ``(m, d)``.
         epochs: number of passes over the training split.
         batch_size: mini-batch size.
-        learning_rate: peak Adam learning rate.
-        weight_decay: decoupled L2 penalty (AdamW-style via ``Adam``'s argument).
+        learning_rate: peak Adam learning rate (the start of the anneal).
+        weight_decay: decoupled L2 penalty (AdamW).
         seed: seed for mini-batch shuffling.
         log_every: log interval in epochs.
+        schedule: ``"cosine"``, ``"linear"`` or ``"constant"``.
+        final_fraction: terminal learning-rate multiplier.
+        warmup_fraction: warmup length as a fraction of ``epochs``.
+        eval_hook: optional callable returning named scalars for the current
+            model; recorded every epoch in :attr:`TrainingHistory.extra`.  Used
+            to log state-space accuracy on a grid that is identical across
+            target codecs.
 
     Returns:
         The populated :class:`TrainingHistory`.
@@ -188,8 +288,13 @@ def train_flow_map(
     optimiser = torch.optim.AdamW(
         model.parameters(), lr=learning_rate, weight_decay=weight_decay
     )
-    schedule = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimiser, T_max=epochs, eta_min=learning_rate * 1e-3
+    schedule_fn = build_scheduler(
+        optimiser,
+        epochs=epochs,
+        peak_lr=learning_rate,
+        schedule=schedule,
+        final_fraction=final_fraction,
+        warmup_fraction=warmup_fraction,
     )
     loss_fn = nn.MSELoss()
 
@@ -223,7 +328,7 @@ def train_flow_map(
             epoch_grad += float(total_norm)
             n_batches += 1
 
-        schedule.step()
+        schedule_fn.step()
         model.eval()
         with torch.no_grad():
             test_loss = float(loss_fn(model(x_test), y_test))
@@ -232,8 +337,11 @@ def train_flow_map(
         history.epoch.append(epoch)
         history.train_loss.append(train_eval)
         history.test_loss.append(test_loss)
-        history.learning_rate.append(float(schedule.get_last_lr()[0]))
+        history.learning_rate.append(float(schedule_fn.get_last_lr()[0]))
         history.grad_norm.append(epoch_grad / max(1, n_batches))
+        if eval_hook is not None:
+            for name, value in eval_hook(model).items():
+                history.extra.setdefault(name, []).append(float(value))
 
         if log_every > 0 and (epoch % log_every == 0 or epoch == epochs - 1):
             LOGGER.info(

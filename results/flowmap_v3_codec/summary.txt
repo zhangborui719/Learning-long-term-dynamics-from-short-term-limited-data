@@ -1,0 +1,52 @@
+Codec diagnosis: direct vs delta target encoding, Lorenz-96 F=64
+==============================================================================
+--- one-step error budget ---                    
+direct: attenuation beta                         0.5907
+direct: increment R2                             0.5961
+direct: state NRMSE                              0.7949
+direct: bias share of MSE                        0.2 %
+delta: attenuation beta                          0.5512
+delta: increment R2                              0.5463
+delta: state NRMSE                               0.8425
+delta: bias share of MSE                         0.3 %
+                                                 
+--- Lyapunov spectrum at dt=0.1 (QR) ---         
+truth: lambda_max                                +13.997 per time unit, 19 unstable dirs, aperiodic
+truth: jacobian sigma_max / rho / kappa          25.51 / 3.90 / 39.5
+direct: lambda_max                               +1.478 per time unit, 5 unstable dirs, aperiodic
+direct: jacobian sigma_max / rho / kappa         3.71 / 1.58 / 18.7
+delta: lambda_max                                +0.015 per time unit, 1 unstable dirs, aperiodic
+delta: jacobian sigma_max / rho / kappa          2.62 / 1.45 / 14.4
+                                                 
+--- invariant measure (long free ensemble) ---   
+truth: rms ratio                                 1.000
+truth: mean ratio                                1.000
+truth: spectrum correlation                      1.000
+truth: spectrum peak mode                        9
+truth: 1/e autocorrelation time                  0.40
+truth: tail spread / truth                       0.999
+                                                 
+direct: rms ratio                                0.669
+direct: mean ratio                               1.296
+direct: spectrum correlation                     0.711
+direct: spectrum peak mode                       8
+direct: 1/e autocorrelation time                 0.10
+direct: tail spread / truth                      0.576
+                                                 
+delta: rms ratio                                 0.602
+delta: mean ratio                                1.317
+delta: spectrum correlation                      0.565
+delta: spectrum peak mode                        8
+delta: 1/e autocorrelation time                  9.40
+delta: tail spread / truth                       0.488
+                                                 
+--- attenuation probe on the true map ---        
+beta=1.00                                        lambda +13.69, rms 1.000, spec r 1.000, peak 9
+beta=0.95                                        lambda +12.06, rms 0.902, spec r 0.997, peak 9
+beta=0.90                                        lambda +10.56, rms 0.847, spec r 0.988, peak 9
+beta=0.85                                        lambda +8.78, rms 0.806, spec r 0.974, peak 9
+beta=0.80                                        lambda +8.69, rms 0.775, spec r 0.955, peak 9
+beta=0.70                                        lambda +6.02, rms 0.726, spec r 0.911, peak 9
+beta=0.60                                        lambda +5.30, rms 0.682, spec r 0.841, peak 9
+beta=0.50                                        lambda +4.10, rms 0.644, spec r 0.762, peak 9
+beta=0.40                                        lambda +1.11, rms 0.632, spec r 0.719, peak 9

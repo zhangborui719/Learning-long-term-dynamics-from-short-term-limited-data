@@ -585,6 +585,35 @@ def plot_spectrum(
 # ---------------------------------------------------------------------------
 # driver
 # ---------------------------------------------------------------------------
+def _state_space_hook(
+    model: FlowMapMLP,
+    codec: TargetCodec,
+    split: Any,
+    data: dict[str, np.ndarray],
+) -> Any:
+    """Build a per-epoch callback that reports *codec-independent* accuracy.
+
+    The training loss lives in the codec's own target space, so it is not
+    comparable between ``direct`` and ``delta`` (their targets differ by exactly
+    ``z_input``).  Mapping both back to physical one-step states and reporting
+    the NRMSE removes that ambiguity and makes the two learning curves directly
+    superimposable.
+    """
+
+    def hook(net: FlowMapMLP) -> dict[str, float]:
+        prediction = codec.decode(data["test_x"], predict(net, data["test_x"]))
+        predicted_increment = (prediction - split.test_input).ravel()
+        true_increment = (split.test_target - split.test_input).ravel()
+        return {
+            "test_state_nrmse": normalized_rmse(prediction, split.test_target),
+            "test_increment_corr": float(
+                np.corrcoef(predicted_increment, true_increment)[0, 1]
+            ),
+        }
+
+    return hook
+
+
 def write_summary(path: Path, rows: list[tuple[str, str]], forcing: int) -> None:
     """Write a two-column key/value text report."""
     width = max(len(key) for key, _ in rows) + 2
@@ -650,6 +679,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         weight_decay=args.weight_decay,
         seed=args.seed,
         log_every=max(1, args.epochs // 10),
+        schedule=args.schedule,
+        final_fraction=args.lr_final_frac,
+        warmup_fraction=args.warmup_frac,
+        eval_hook=_state_space_hook(model, codec, split, data),
     )
 
     metrics: dict[str, Any] = {
@@ -660,6 +693,9 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "standardization_mean": float(split.mean),
         "standardization_sd": float(split.scale),
         "learning_rate": args.lr,
+        "lr_schedule": args.schedule,
+        "lr_final_frac": args.lr_final_frac,
+        "lr_warmup_frac": args.warmup_frac,
         "epochs": args.epochs,
         "shift_augment": args.shift_augment,
         "burn_in": args.burn_in,
@@ -976,7 +1012,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                         choices=["tanh", "silu", "gelu", "relu"])
     parser.add_argument("--epochs", type=int, default=1500)
     parser.add_argument("--batch-size", type=int, default=512)
-    parser.add_argument("--lr", type=float, default=3e-3)
+    parser.add_argument("--lr", type=float, default=3e-3,
+                        help="peak / starting learning rate of the anneal")
+    parser.add_argument("--schedule", default="cosine",
+                        choices=["cosine", "linear", "constant"],
+                        help="learning-rate decay shape after the optional warmup")
+    parser.add_argument("--lr-final-frac", type=float, default=1e-3,
+                        help="terminal learning rate as a fraction of --lr")
+    parser.add_argument("--warmup-frac", type=float, default=0.0,
+                        help="linear warmup length as a fraction of --epochs")
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--max-horizon", type=int, default=20)

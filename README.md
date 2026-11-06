@@ -327,6 +327,64 @@ interval it is trained on.
 - **Spectral distortion.** The reproduced spectrum is 3-10x low and peaks at
   `k = 8` instead of `k = 11`, because the contraction suppresses the energetic
   band more than the large scales.
+  *Correction (v3):* the `k = 11` reference was estimated from the 483-sample test
+  segment, and `argmax E_k` wanders between `k = 7` and `k = 11` across independent
+  samples of that size. `E_k` is flat to within ±20 % for `k = 2 ... 16`, so the
+  peak mode is not a usable statistic here; compare `log E_k` correlations or an
+  `L1` distance over the whole spectrum instead. See `REPORT_v3.md` §5.
+
+### Update (v3): learning-rate anneal, and why the increment codec loses
+
+Two new tools extend the study; both are documented in `REPORT_v3.md`:
+
+- `sweep_lr.py` sweeps the *peak* learning rate of the anneal (5e-4 ... 2e-2,
+  3 seeds, cosine to `lr/1000`), and `flowmap_model.lr_multiplier` /
+  `build_scheduler` make the schedule explicit (`cosine` / `linear` / `constant`,
+  optional warmup, non-zero terminal rate). Every run now also records
+  `test_state_nrmse` per epoch, i.e. the one-step error *after decoding*, which is
+  the only learning curve that is comparable between target codecs.
+- `diagnose_codecs.py` measures what the one-step error cannot: the leading
+  Lyapunov exponent of the learned map (QR on the full 40-dimensional tangent),
+  whether its attractor is periodic, and the resulting invariant measure from a
+  long free ensemble. `scan_dynamics.py` applies the same battery to the whole
+  sweep, and records both the short-horizon and the post-transient exponent.
+
+The short version (60 trainings: 48-point grid + long-training and constant-lr
+controls):
+
+- Annealing is worth ~2.3 %: at the same peak `lr = 6e-3`, cosine gives one-step
+  NRMSE 0.7977 (`direct`) / 0.8450 (`delta`) against 0.8176 / 0.8644 for a
+  constant rate. The peak-rate optimum is a plateau from 3e-3 to 1e-2.
+- The codec gap is an *estimator* effect, not a representation one: both codecs
+  estimate the same quantity (`dz = z(t+dt) - z(t)` is a known additive offset),
+  the gap shrinks monotonically with the learning rate (0.071 -> 0.038), and it
+  does **not** close with 2.7x more training (0.0473 -> 0.0447). Concretely,
+  `delta` captures the *linear* damping better (0.723 vs 0.701) and the
+  *nonlinear* advection 30 % worse (R^2 0.178 vs 0.256) -- and advection is what
+  generates the positive Lyapunov exponent.
+- With `tau_Lyap = 0.084 < dt = 0.1` that 6 % one-step difference moves the
+  learned map across the chaos threshold: `direct` lands at
+  `lambda_max = +1.48` (5 unstable directions), `delta` at `+0.02` (1, i.e. on
+  the edge). Over the grid, 22/24 `direct` runs stay chaotic while 10/24 `delta`
+  runs fall to `lambda < 0` and 6 of them converge to exact limit cycles. The
+  learned maps also have long chaotic transients, so the exponent must be
+  measured after a warm-up -- the tool now reports both.
+- Warning for anyone reusing the metrics: `log E_k` correlation is **not** a
+  proxy for quality here. Across the `delta` grid it correlates -0.91 with the
+  amplitude ratio and +0.84 with the one-step NRMSE (higher spectrum score, worse
+  attractor), and a constant learning rate beats annealing on spectrum
+  correlation while losing on accuracy. Report it only next to the rms ratio and
+  `lambda_max`.
+
+```bash
+python sweep_lr.py --tag lr --lrs 5e-4,1e-3,2e-3,3e-3,4e-3,6e-3,1e-2,2e-2 --workers 6
+python sweep_lr.py --tag long  --lrs 6e-3 --epochs 4000 --workers 6 --no-curves
+python sweep_lr.py --tag const --lrs 6e-3 --schedule constant --workers 6 --no-curves
+python diagnose_codecs.py --runs direct=DIR_D --delta=DIR_L --output results/flowmap_v3_codec \
+    --steps 4000 --probe-steps 4000 --burn 800 --ensemble 16 --warm-up 2000
+python scan_dynamics.py --root results/flowmap_v3_lr --steps 1200 --ensemble 8 --warm-up 2000
+```
+
 
 ### Files
 
@@ -334,7 +392,13 @@ interval it is trained on.
 - `flowmap_model.py`: the MLP and the training loop.
 - `train_flowmap.py`: end-to-end run, metrics, figures, `--self-check`.
 - `scan_dt_flowmap.py`: sampling-interval sweep at fixed compute.
-- `test_flowmap.py`: 16 unit tests, including a finite-difference check of the
+- `sweep_lr.py`: learning-rate anneal sweep, aggregation and plots.
+- `diagnose_codecs.py`: codec diagnosis (error budget, Lyapunov spectrum,
+  periodic-orbit detection, invariant measure, null-model probes).
+- `scan_dynamics.py`: the same dynamics battery over a whole sweep directory.
+- `probe_transient.py`: how long the learned map's chaotic transient lasts, by
+  measuring the exponent and the closest recurrence at several warm-up lengths.
+- `test_flowmap.py`: 22 unit tests, including a finite-difference check of the
   analytic gradient and a check that cyclic shifting commutes with the true flow.
 - `results/flowmap/`: figures, `metrics.json`, `summary.txt`, per-epoch history,
   rollout and sweep CSVs, and the trained weights (`flowmap_model_F64.pt`).

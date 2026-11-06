@@ -1,3 +1,15 @@
 __pycache__/
 *.py[cod]
 .venv/
+
+# v3 sweeps: every run directory is ~2.4 MB (checkpoint + 5 figures + rollout CSV).
+# Only the aggregates are committed; an individual run is reproduced by
+#   python sweep_lr.py --tag lr|long|const ...
+results/flowmap_v3_lr/*/
+results/flowmap_v3_long/*/
+results/flowmap_v3_const/*/
+results/flowmap_v3_*/*.log
+
+# 20k-state truth record used to estimate the reference energy spectrum.
+# Regenerated (and cached) by diagnose_codecs.long_truth_reference().
+results/flowmap_v3_codec/truth_reference.npz

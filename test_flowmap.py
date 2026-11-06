@@ -23,7 +23,7 @@ from flowmap_data import (
     encode_dataset,
     fit_ridge_flow_map,
 )
-from flowmap_model import FlowMapMLP, train_flow_map
+from flowmap_model import FlowMapMLP, TrainingHistory, lr_multiplier, train_flow_map
 from solve_lorenz96 import rk4_step
 from train_flowmap import (
     delta_metrics,
@@ -240,6 +240,57 @@ class TestMetrics(unittest.TestCase):
         )
         # the sampling interval is coarser than one Lyapunov time
         self.assertGreater(split.dt, estimate["lyapunov_time"])
+
+
+class TestAnnealingSchedule(unittest.TestCase):
+    """The anneal is the only optimiser knob left, so it gets its own checks."""
+
+    def test_cosine_endpoints(self) -> None:
+        """Multiplier is 1 at the first epoch and lands on the floor at the horizon."""
+        self.assertAlmostEqual(lr_multiplier(0, 1500, 0, 1e-3, "cosine"), 1.0, places=12)
+        # the scheduler is evaluated at epochs 0 .. T-1, so the last *applied*
+        # rate is one step short of the horizon; it must still be at the floor
+        self.assertLess(lr_multiplier(1499, 1500, 0, 1e-3, "cosine"), 1.1e-3)
+        self.assertAlmostEqual(lr_multiplier(1500, 1500, 0, 1e-3, "cosine"), 1e-3, places=12)
+
+    def test_schedule_is_monotone_after_warmup(self) -> None:
+        """No annealing shape may ever increase the rate once warmup is over."""
+        for shape in ("cosine", "linear"):
+            values = [lr_multiplier(epoch, 600, 60, 1e-3, shape) for epoch in range(60, 600)]
+            self.assertTrue(all(b <= a + 1e-12 for a, b in zip(values, values[1:])), shape)
+
+    def test_warmup_ramps_linearly_from_zero(self) -> None:
+        """The first warmup epoch is a small fraction of the peak, not the peak."""
+        self.assertLess(lr_multiplier(0, 1000, 100), 0.02)
+        self.assertGreater(lr_multiplier(99, 1000, 100), 0.9)
+
+    def test_constant_shape_ignores_decay(self) -> None:
+        """The ablation control keeps the peak rate until the final epoch."""
+        self.assertAlmostEqual(lr_multiplier(500, 1000, 0, 1e-3, "constant"), 1.0, places=9)
+
+    def test_history_records_extra_series(self) -> None:
+        """Per-epoch hook output must survive into the CSV-shaped arrays."""
+        history = TrainingHistory(epoch=[0], train_loss=[1.0], test_loss=[1.0],
+                                  learning_rate=[1e-3], grad_norm=[0.1])
+        history.extra.setdefault("test_state_nrmse", []).append(0.8)
+        arrays = history.as_arrays()
+        self.assertIn("test_state_nrmse", arrays)
+        self.assertEqual(arrays["test_state_nrmse"].shape, arrays["epoch"].shape)
+
+    def test_annealed_training_beats_persistence_on_a_toy_problem(self) -> None:
+        """End-to-end: a 3-epoch annealed fit must already improve on 'do nothing'."""
+        rng = np.random.default_rng(0)
+        inputs = rng.normal(size=(256, 6))
+        targets = np.tanh(inputs) * 0.5 + inputs * 0.5
+        model = FlowMapMLP(n_dim=6, hidden_width=32, n_hidden_layers=1)
+        before = float(np.mean((model(torch.as_tensor(inputs, dtype=torch.float32))
+                               .detach().numpy() - targets) ** 2))
+        train_flow_map(model, inputs, targets, inputs[:64], targets[:64],
+                       epochs=3, batch_size=64, learning_rate=1e-2, seed=0,
+                       log_every=0, schedule="cosine", warmup_fraction=0.1)
+        after = float(np.mean((model(torch.as_tensor(inputs, dtype=torch.float32))
+                              .detach().numpy() - targets) ** 2))
+        self.assertLess(after, before)
 
 
 if __name__ == "__main__":

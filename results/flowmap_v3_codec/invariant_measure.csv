@@ -1,0 +1,4 @@
+map,mean_ratio,rms_ratio,variance_ratio,skew,kurtosis,spectrum_correlation,spectrum_peak_mode,tail_spread_ratio,acf_time
+truth,1,1,1,0.0819913,-0.21699,1,9,0.999348,0.4
+direct,1.29628,0.668848,0.345698,0.135233,-0.794442,0.710905,8,0.575938,0.1
+delta,1.31672,0.601979,0.249308,0.0440634,-0.834256,0.565174,8,0.488492,9.4
